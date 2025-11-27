@@ -47,13 +47,6 @@ const updateEnterpriseSchema = z.object({
       message: "Telefone deve ter exatamente 11 dígitos",
     }),
   register: z.string().min(1, "Registro é obrigatório"),
-  logoURL: z
-    .string()
-    .url("URL inválida")
-    .optional()
-    .nullable()
-    .or(z.literal(""))
-    .transform((val) => (val === "" ? null : val)),
 });
 
 // Tipo de entrada (antes das transformações)
@@ -69,7 +62,6 @@ type UpdateEnterpriseInput = {
   instagram_url?: string | null;
   phoneNumber: string;
   register: string;
-  logoURL?: string | null;
 };
 
 export async function updateEnterprise(data: UpdateEnterpriseInput) {
@@ -140,7 +132,6 @@ export async function updateEnterprise(data: UpdateEnterpriseInput) {
       instagram_url: validatedData.instagram_url || null,
       phoneNumber: validatedData.phoneNumber,
       register: validatedData.register,
-      logoURL: validatedData.logoURL || null,
       updated_at: new Date(),
     };
 

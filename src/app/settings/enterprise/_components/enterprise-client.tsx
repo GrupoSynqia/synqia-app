@@ -42,12 +42,6 @@ const enterpriseFormSchema = z.object({
     .or(z.literal("")),
   phoneNumber: z.string().min(1, "Telefone é obrigatório"),
   register: z.string().min(1, "Registro é obrigatório"),
-  logoURL: z
-    .string()
-    .url("URL inválida")
-    .optional()
-    .nullable()
-    .or(z.literal("")),
 });
 
 type EnterpriseFormData = z.infer<typeof enterpriseFormSchema>;
@@ -65,7 +59,6 @@ type EnterpriseClientProps = {
     instagram_url: string | null;
     phoneNumber: string;
     register: string;
-    logoURL: string | null;
   };
 };
 
@@ -87,7 +80,6 @@ export function EnterpriseClient({ enterprise }: EnterpriseClientProps) {
       instagram_url: enterprise.instagram_url || "",
       phoneNumber: formatPhoneNumber(enterprise.phoneNumber),
       register: enterprise.register,
-      logoURL: enterprise.logoURL || "",
     },
   });
 
@@ -132,7 +124,7 @@ export function EnterpriseClient({ enterprise }: EnterpriseClientProps) {
               </p>
             </div>
             <Image
-              src={enterprise.logoURL || "/LogoVerticalWhite.png"}
+              src={"/LogoVerticalWhite.png"}
               alt="Logo da empresa"
               width={100}
               height={100}
@@ -345,26 +337,6 @@ export function EnterpriseClient({ enterprise }: EnterpriseClientProps) {
                           <Input
                             type="url"
                             placeholder="https://instagram.com/empresa"
-                            {...field}
-                            value={field.value || ""}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {/* Logo URL */}
-                  <FormField
-                    control={form.control}
-                    name="logoURL"
-                    render={({ field }) => (
-                      <FormItem className="sm:col-span-2">
-                        <FormLabel>URL do Logo</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="url"
-                            placeholder="https://exemplo.com/logo.png"
                             {...field}
                             value={field.value || ""}
                           />
