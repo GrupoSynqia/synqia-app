@@ -138,7 +138,7 @@ async function processMessage(message: ZApiWebhookMessage) {
     }
 
     // Buscar ou criar contato
-    let contact = await db
+    const contact = await db
       .select()
       .from(whatsappContacts)
       .where(and(eq(whatsappContacts.bot_id, bot.id), eq(whatsappContacts.phone, message.phone)))
