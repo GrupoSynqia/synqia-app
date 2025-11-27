@@ -10,7 +10,7 @@ import {
   whatsappMenuOptions,
 } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
-import axios from "axios";
+import { sendWhatsappMessage } from "@/lib/zapi/zapi-service";
 
 // Tipo do payload do webhook Z-API
 type ZApiWebhookMessage = {
@@ -259,24 +259,9 @@ async function processMessage(message: ZApiWebhookMessage) {
     }
 
     // Enviar resposta via Z-API
-    const baseURL = process.env.ZAPI_BASE_URL || "https://api.z-api.io";
-    const apiUrl = `${baseURL}/instances/${bot.instance_id}/token/${bot.api_token}/send-text`;
-
     try {
-      const zapiResponse = await axios.post(
-        apiUrl,
-        {
-          phone: message.phone,
-          message: replyMessage,
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      const messageId = zapiResponse.data?.messageId || zapiResponse.data?.id;
+      const result = await sendWhatsappMessage(message.phone, replyMessage);
+      const messageId = result.messageId || result.id;
 
       // Salvar mensagem enviada
       await db.insert(whatsappMessages).values({
