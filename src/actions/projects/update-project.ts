@@ -14,12 +14,17 @@ const updateProjectSchema = z.object({
   category: z.enum(["microsaas", "ecommerce", "crm", "others"], {
     errorMap: () => ({ message: "Categoria inválida" }),
   }),
+  logo_url: z
+    .union([z.string().url("URL inválida"), z.null(), z.literal("")])
+    .optional()
+    .transform((val) => (val === "" ? null : val)),
 });
 
 type UpdateProjectInput = {
   id: string;
   name: string;
   category: "microsaas" | "ecommerce" | "crm" | "others";
+  logo_url?: string | null;
 };
 
 export async function updateProject(data: UpdateProjectInput) {
@@ -89,14 +94,21 @@ export async function updateProject(data: UpdateProjectInput) {
     const existingSlugs = existingProjects.map((p) => p.slug);
     const slug = generateUniqueSlug(validatedData.name, existingSlugs);
 
+    const updateData: Partial<typeof projects.$inferInsert> = {
+      name: validatedData.name,
+      category: validatedData.category,
+      slug: slug,
+      updated_at: new Date(),
+    };
+
+    // Incluir logo_url se fornecido
+    if (validatedData.logo_url !== undefined) {
+      updateData.logo_url = validatedData.logo_url;
+    }
+
     const [updatedProject] = await db
       .update(projects)
-      .set({
-        name: validatedData.name,
-        category: validatedData.category,
-        slug: slug,
-        updated_at: new Date(),
-      })
+      .set(updateData)
       .where(eq(projects.id, validatedData.id))
       .returning();
 

@@ -34,6 +34,10 @@ const updateProfileSchema = z.object({
     .refine((val) => val.length === 11, {
       message: "Telefone deve ter exatamente 11 dígitos",
     }),
+  profile_picture: z
+    .union([z.string().url("URL inválida"), z.null(), z.literal("")])
+    .optional()
+    .transform((val) => (val === "" ? null : val)),
 });
 
 // Tipo de entrada (antes das transformações)
@@ -41,6 +45,7 @@ type UpdateProfileInput = {
   email: string;
   name: string;
   phone: string;
+  profile_picture?: string | null;
 };
 
 export async function updateProfile(data: UpdateProfileInput) {
@@ -82,6 +87,11 @@ export async function updateProfile(data: UpdateProfileInput) {
       phone: validatedData.phone,
       updated_at: new Date(),
     };
+
+    // Incluir profile_picture se fornecido
+    if (validatedData.profile_picture !== undefined) {
+      updateData.profile_picture = validatedData.profile_picture;
+    }
 
     // Atualizar perfil
     await db.update(profiles).set(updateData).where(eq(profiles.id, user.id));
