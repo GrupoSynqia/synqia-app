@@ -4,19 +4,22 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import db from "@/db";
 import { projects, profiles } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { createClient } from "@/lib/supabase/server";
+import { generateUniqueSlug } from "@/helpers/slug";
 
 const updateProjectSchema = z.object({
   id: z.string().uuid("ID inválido"),
   name: z.string().min(1, "Nome é obrigatório"),
-  description: z.string().min(1, "Descrição é obrigatória"),
+  category: z.enum(["microsaas", "ecommerce", "crm", "others"], {
+    errorMap: () => ({ message: "Categoria inválida" }),
+  }),
 });
 
 type UpdateProjectInput = {
   id: string;
   name: string;
-  description: string;
+  category: "microsaas" | "ecommerce" | "crm" | "others";
 };
 
 export async function updateProject(data: UpdateProjectInput) {
@@ -72,11 +75,26 @@ export async function updateProject(data: UpdateProjectInput) {
       };
     }
 
+    // Verifica slugs existentes (excluindo o projeto atual) para garantir unicidade
+    const existingProjects = await db
+      .select({ slug: projects.slug })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.enterprise_id, profile.enterprise_id),
+          ne(projects.id, validatedData.id)
+        )
+      );
+
+    const existingSlugs = existingProjects.map((p) => p.slug);
+    const slug = generateUniqueSlug(validatedData.name, existingSlugs);
+
     const [updatedProject] = await db
       .update(projects)
       .set({
         name: validatedData.name,
-        description: validatedData.description,
+        category: validatedData.category,
+        slug: slug,
         updated_at: new Date(),
       })
       .where(eq(projects.id, validatedData.id))
@@ -103,4 +121,3 @@ export async function updateProject(data: UpdateProjectInput) {
     };
   }
 }
-

@@ -6,15 +6,18 @@ import db from "@/db";
 import { projects, profiles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { createClient } from "@/lib/supabase/server";
+import { generateUniqueSlug } from "@/helpers/slug";
 
 const createProjectSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
-  description: z.string().min(1, "Descrição é obrigatória"),
+  category: z.enum(["microsaas", "ecommerce", "crm", "others"], {
+    errorMap: () => ({ message: "Categoria inválida" }),
+  }),
 });
 
 type CreateProjectInput = {
   name: string;
-  description: string;
+  category: "microsaas" | "ecommerce" | "crm" | "others";
 };
 
 export async function createProject(data: CreateProjectInput) {
@@ -48,11 +51,21 @@ export async function createProject(data: CreateProjectInput) {
 
     const profile = profileData[0];
 
+    // Verifica slugs existentes para garantir unicidade
+    const existingProjects = await db
+      .select({ slug: projects.slug })
+      .from(projects)
+      .where(eq(projects.enterprise_id, profile.enterprise_id));
+
+    const existingSlugs = existingProjects.map((p) => p.slug);
+    const slug = generateUniqueSlug(validatedData.name, existingSlugs);
+
     const [newProject] = await db
       .insert(projects)
       .values({
         name: validatedData.name,
-        description: validatedData.description,
+        category: validatedData.category,
+        slug: slug,
         enterprise_id: profile.enterprise_id,
       })
       .returning();
@@ -72,9 +85,7 @@ export async function createProject(data: CreateProjectInput) {
 
     return {
       success: false,
-      error:
-        error instanceof Error ? error.message : "Erro ao criar projeto",
+      error: error instanceof Error ? error.message : "Erro ao criar projeto",
     };
   }
 }
-

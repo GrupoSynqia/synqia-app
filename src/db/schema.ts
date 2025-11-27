@@ -1,5 +1,13 @@
 import { relations } from "drizzle-orm";
-import { pgTable, text, varchar, uuid, timestamp, integer, boolean } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  varchar,
+  uuid,
+  timestamp,
+  integer,
+  boolean,
+} from "drizzle-orm/pg-core";
 
 //Tabela de usuários do Supabase
 export const profiles = pgTable("profiles", {
@@ -34,7 +42,6 @@ export const enterprises = pgTable("enterprises", {
   instagram_url: text("instagram_url"),
   phoneNumber: text("phone_number").notNull(),
   register: text("register").notNull(),
-  logoURL: text("logo_url"),
   created_at: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -52,7 +59,10 @@ export const enterpriseProfileRelation = relations(enterprises, ({ many }) => ({
 export const projects = pgTable("projects", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
-  description: text("description").notNull(),
+  logo_url: text("logo_url"),
+  status: text("status").notNull().default("active"), // active, inactive
+  category: text("category").notNull(), // microsaas, ecommerce, crm, others
+  slug: text("slug").notNull(),
   enterprise_id: uuid("enterprise_id")
     .references(() => enterprises.id)
     .notNull(),
@@ -114,8 +124,9 @@ export const whatsappMessages = pgTable("whatsapp_messages", {
   bot_id: uuid("bot_id")
     .references(() => whatsappBots.id, { onDelete: "cascade" })
     .notNull(),
-  contact_id: uuid("contact_id")
-    .references(() => whatsappContacts.id, { onDelete: "set null" }),
+  contact_id: uuid("contact_id").references(() => whatsappContacts.id, {
+    onDelete: "set null",
+  }),
   phone: text("phone").notNull(),
   message_id: text("message_id"), // ID da mensagem do Z-API
   direction: text("direction").notNull(), // incoming, outgoing
@@ -134,7 +145,9 @@ export const whatsappResponses = pgTable("whatsapp_responses", {
     .notNull(),
   response_text: text("response_text"),
   response_type: text("response_type").notNull().default("text"), // text, menu, flow
-  menu_id: uuid("menu_id").references(() => whatsappMenus.id, { onDelete: "set null" }),
+  menu_id: uuid("menu_id").references(() => whatsappMenus.id, {
+    onDelete: "set null",
+  }),
   created_at: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -188,8 +201,9 @@ export const whatsappMenuOptions = pgTable("whatsapp_menu_options", {
     .notNull(),
   option_text: text("option_text").notNull(),
   option_value: text("option_value"),
-  response_id: uuid("response_id")
-    .references(() => whatsappResponses.id, { onDelete: "set null" }),
+  response_id: uuid("response_id").references(() => whatsappResponses.id, {
+    onDelete: "set null",
+  }),
   order: integer("order").notNull().default(0),
   created_at: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -200,85 +214,124 @@ export const whatsappMenuOptions = pgTable("whatsapp_menu_options", {
 });
 
 // Relações WhatsApp
-export const whatsappBotProjectRelation = relations(whatsappBots, ({ one }) => ({
-  project: one(projects, {
-    fields: [whatsappBots.project_id],
-    references: [projects.id],
-  }),
-}));
+export const whatsappBotProjectRelation = relations(
+  whatsappBots,
+  ({ one }) => ({
+    project: one(projects, {
+      fields: [whatsappBots.project_id],
+      references: [projects.id],
+    }),
+  })
+);
 
-export const whatsappBotContactsRelation = relations(whatsappBots, ({ many }) => ({
-  contacts: many(whatsappContacts),
-}));
+export const whatsappBotContactsRelation = relations(
+  whatsappBots,
+  ({ many }) => ({
+    contacts: many(whatsappContacts),
+  })
+);
 
-export const whatsappBotMessagesRelation = relations(whatsappBots, ({ many }) => ({
-  messages: many(whatsappMessages),
-}));
+export const whatsappBotMessagesRelation = relations(
+  whatsappBots,
+  ({ many }) => ({
+    messages: many(whatsappMessages),
+  })
+);
 
-export const whatsappBotResponsesRelation = relations(whatsappBots, ({ many }) => ({
-  responses: many(whatsappResponses),
-}));
+export const whatsappBotResponsesRelation = relations(
+  whatsappBots,
+  ({ many }) => ({
+    responses: many(whatsappResponses),
+  })
+);
 
-export const whatsappBotTriggersRelation = relations(whatsappBots, ({ many }) => ({
-  triggers: many(whatsappTriggers),
-}));
+export const whatsappBotTriggersRelation = relations(
+  whatsappBots,
+  ({ many }) => ({
+    triggers: many(whatsappTriggers),
+  })
+);
 
 export const whatsappBotMenusRelation = relations(whatsappBots, ({ many }) => ({
   menus: many(whatsappMenus),
 }));
 
-export const whatsappContactMessagesRelation = relations(whatsappContacts, ({ many }) => ({
-  messages: many(whatsappMessages),
-}));
+export const whatsappContactMessagesRelation = relations(
+  whatsappContacts,
+  ({ many }) => ({
+    messages: many(whatsappMessages),
+  })
+);
 
-export const whatsappContactBotRelation = relations(whatsappContacts, ({ one }) => ({
-  bot: one(whatsappBots, {
-    fields: [whatsappContacts.bot_id],
-    references: [whatsappBots.id],
-  }),
-}));
+export const whatsappContactBotRelation = relations(
+  whatsappContacts,
+  ({ one }) => ({
+    bot: one(whatsappBots, {
+      fields: [whatsappContacts.bot_id],
+      references: [whatsappBots.id],
+    }),
+  })
+);
 
-export const whatsappMessageBotRelation = relations(whatsappMessages, ({ one }) => ({
-  bot: one(whatsappBots, {
-    fields: [whatsappMessages.bot_id],
-    references: [whatsappBots.id],
-  }),
-}));
+export const whatsappMessageBotRelation = relations(
+  whatsappMessages,
+  ({ one }) => ({
+    bot: one(whatsappBots, {
+      fields: [whatsappMessages.bot_id],
+      references: [whatsappBots.id],
+    }),
+  })
+);
 
-export const whatsappMessageContactRelation = relations(whatsappMessages, ({ one }) => ({
-  contact: one(whatsappContacts, {
-    fields: [whatsappMessages.contact_id],
-    references: [whatsappContacts.id],
-  }),
-}));
+export const whatsappMessageContactRelation = relations(
+  whatsappMessages,
+  ({ one }) => ({
+    contact: one(whatsappContacts, {
+      fields: [whatsappMessages.contact_id],
+      references: [whatsappContacts.id],
+    }),
+  })
+);
 
-export const whatsappResponseBotRelation = relations(whatsappResponses, ({ one }) => ({
-  bot: one(whatsappBots, {
-    fields: [whatsappResponses.bot_id],
-    references: [whatsappBots.id],
-  }),
-}));
+export const whatsappResponseBotRelation = relations(
+  whatsappResponses,
+  ({ one }) => ({
+    bot: one(whatsappBots, {
+      fields: [whatsappResponses.bot_id],
+      references: [whatsappBots.id],
+    }),
+  })
+);
 
-export const whatsappResponseMenuRelation = relations(whatsappResponses, ({ one }) => ({
-  menu: one(whatsappMenus, {
-    fields: [whatsappResponses.menu_id],
-    references: [whatsappMenus.id],
-  }),
-}));
+export const whatsappResponseMenuRelation = relations(
+  whatsappResponses,
+  ({ one }) => ({
+    menu: one(whatsappMenus, {
+      fields: [whatsappResponses.menu_id],
+      references: [whatsappMenus.id],
+    }),
+  })
+);
 
-export const whatsappTriggerBotRelation = relations(whatsappTriggers, ({ one }) => ({
-  bot: one(whatsappBots, {
-    fields: [whatsappTriggers.bot_id],
-    references: [whatsappBots.id],
-  }),
-}));
+export const whatsappTriggerBotRelation = relations(
+  whatsappTriggers,
+  ({ one }) => ({
+    bot: one(whatsappBots, {
+      fields: [whatsappTriggers.bot_id],
+      references: [whatsappBots.id],
+    }),
+  })
+);
 
-export const whatsappTriggerResponseRelation = relations(whatsappTriggers, ({ one }) => ({
-  response: one(whatsappResponses, {
-    fields: [whatsappTriggers.response_id],
-    references: [whatsappResponses.id],
-  }),
-}));
+export const whatsappTriggerResponseRelation = relations(
+  whatsappTriggers,
+  ({ one }) => ({
+    response: one(whatsappResponses, {
+      fields: [whatsappTriggers.response_id],
+      references: [whatsappResponses.id],
+    }),
+  })
+);
 
 export const whatsappMenuBotRelation = relations(whatsappMenus, ({ one }) => ({
   bot: one(whatsappBots, {
@@ -287,20 +340,29 @@ export const whatsappMenuBotRelation = relations(whatsappMenus, ({ one }) => ({
   }),
 }));
 
-export const whatsappMenuOptionsRelation = relations(whatsappMenus, ({ many }) => ({
-  options: many(whatsappMenuOptions),
-}));
+export const whatsappMenuOptionsRelation = relations(
+  whatsappMenus,
+  ({ many }) => ({
+    options: many(whatsappMenuOptions),
+  })
+);
 
-export const whatsappMenuOptionMenuRelation = relations(whatsappMenuOptions, ({ one }) => ({
-  menu: one(whatsappMenus, {
-    fields: [whatsappMenuOptions.menu_id],
-    references: [whatsappMenus.id],
-  }),
-}));
+export const whatsappMenuOptionMenuRelation = relations(
+  whatsappMenuOptions,
+  ({ one }) => ({
+    menu: one(whatsappMenus, {
+      fields: [whatsappMenuOptions.menu_id],
+      references: [whatsappMenus.id],
+    }),
+  })
+);
 
-export const whatsappMenuOptionResponseRelation = relations(whatsappMenuOptions, ({ one }) => ({
-  response: one(whatsappResponses, {
-    fields: [whatsappMenuOptions.response_id],
-    references: [whatsappResponses.id],
-  }),
-}));
+export const whatsappMenuOptionResponseRelation = relations(
+  whatsappMenuOptions,
+  ({ one }) => ({
+    response: one(whatsappResponses, {
+      fields: [whatsappMenuOptions.response_id],
+      references: [whatsappResponses.id],
+    }),
+  })
+);
