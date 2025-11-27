@@ -46,7 +46,11 @@ type ZApiWebhookMessage = {
 };
 
 // Função para verificar match de trigger
-function checkTriggerMatch(messageText: string, triggerText: string, matchType: string): boolean {
+function checkTriggerMatch(
+  messageText: string,
+  triggerText: string,
+  matchType: string
+): boolean {
   const lowerMessage = messageText.toLowerCase();
   const lowerTrigger = triggerText.toLowerCase();
 
@@ -106,7 +110,11 @@ async function formatMenuMessage(menuId: string): Promise<string> {
 async function processMessage(message: ZApiWebhookMessage) {
   try {
     // Validar se é mensagem recebida
-    if (message.fromMe || message.isGroup || message.type !== "ReceivedCallback") {
+    if (
+      message.fromMe ||
+      message.isGroup ||
+      message.type !== "ReceivedCallback"
+    ) {
       return;
     }
 
@@ -141,7 +149,12 @@ async function processMessage(message: ZApiWebhookMessage) {
     const contact = await db
       .select()
       .from(whatsappContacts)
-      .where(and(eq(whatsappContacts.bot_id, bot.id), eq(whatsappContacts.phone, message.phone)))
+      .where(
+        and(
+          eq(whatsappContacts.bot_id, bot.id),
+          eq(whatsappContacts.phone, message.phone)
+        )
+      )
       .limit(1);
 
     let contactId: string;
@@ -185,13 +198,23 @@ async function processMessage(message: ZApiWebhookMessage) {
     const triggers = await db
       .select()
       .from(whatsappTriggers)
-      .where(and(eq(whatsappTriggers.bot_id, bot.id), eq(whatsappTriggers.is_active, true)))
-      .orderBy(asc(whatsappTriggers.priority), asc(whatsappTriggers.created_at));
+      .where(
+        and(
+          eq(whatsappTriggers.bot_id, bot.id),
+          eq(whatsappTriggers.is_active, true)
+        )
+      )
+      .orderBy(
+        asc(whatsappTriggers.priority),
+        asc(whatsappTriggers.created_at)
+      );
 
     // Verificar match com triggers
     let matchedTrigger = null;
     for (const trigger of triggers) {
-      if (checkTriggerMatch(messageText, trigger.trigger_text, trigger.match_type)) {
+      if (
+        checkTriggerMatch(messageText, trigger.trigger_text, trigger.match_type)
+      ) {
         matchedTrigger = trigger;
         break;
       }
@@ -224,7 +247,9 @@ async function processMessage(message: ZApiWebhookMessage) {
     } else if (response.response_type === "text" && response.response_text) {
       replyMessage = response.response_text;
     } else {
-      console.log(`Tipo de resposta não suportado ou sem conteúdo: ${response.response_type}`);
+      console.log(
+        `Tipo de resposta não suportado ou sem conteúdo: ${response.response_type}`
+      );
       return;
     }
 
@@ -277,23 +302,91 @@ async function processMessage(message: ZApiWebhookMessage) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Verificar Content-Type
+    const contentType = request.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      console.error("Content-Type inválido:", contentType);
+      return NextResponse.json(
+        { error: "Content-Type deve ser application/json" },
+        { status: 400 }
+      );
+    }
 
-    // Validar que é um array
+    // Ler o body como texto primeiro para melhor tratamento de erros
+    let bodyText: string;
+    try {
+      bodyText = await request.text();
+    } catch (error) {
+      console.error("Erro ao ler body:", error);
+      return NextResponse.json(
+        { error: "Erro ao ler body da requisição" },
+        { status: 400 }
+      );
+    }
+
+    // Verificar se o body não está vazio
+    if (!bodyText || bodyText.trim() === "") {
+      console.error("Body vazio recebido");
+      return NextResponse.json({ error: "Body vazio" }, { status: 400 });
+    }
+
+    // Fazer parse do JSON
+    let body: unknown;
+    try {
+      body = JSON.parse(bodyText);
+    } catch (parseError) {
+      console.error("Erro ao fazer parse do JSON:", parseError);
+      console.error(
+        "Body recebido (primeiros 500 chars):",
+        bodyText.substring(0, 500)
+      );
+      return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+    }
+
+    // Log do payload recebido para debug (apenas em desenvolvimento)
+    if (process.env.NODE_ENV === "development") {
+      console.log("Payload recebido:", JSON.stringify(body, null, 2));
+      console.log(
+        "Tipo do payload:",
+        Array.isArray(body) ? "array" : typeof body
+      );
+    }
+
+    // Validar que é um array e converter se necessário
+    let messages: ZApiWebhookMessage[];
     if (!Array.isArray(body)) {
-      return NextResponse.json({ error: "Payload deve ser um array" }, { status: 400 });
+      console.error("Payload não é um array. Tipo recebido:", typeof body);
+      // Se for um objeto único, converter para array (caso o Z-API mude o formato)
+      if (typeof body === "object" && body !== null) {
+        console.log("Convertendo objeto único para array");
+        messages = [body as ZApiWebhookMessage];
+      } else {
+        return NextResponse.json(
+          { error: "Payload deve ser um array ou objeto" },
+          { status: 400 }
+        );
+      }
+    } else {
+      messages = body as ZApiWebhookMessage[];
+    }
+
+    // Validar que o array não está vazio
+    if (messages.length === 0) {
+      console.log("Array vazio recebido");
+      return NextResponse.json({ success: true }, { status: 200 });
     }
 
     // Processar cada mensagem
-    const promises = body.map((message: ZApiWebhookMessage) => processMessage(message));
+    const promises = messages.map((message: ZApiWebhookMessage) =>
+      processMessage(message)
+    );
     await Promise.all(promises);
 
     // Sempre retornar 200 OK para o Z-API
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error("Erro no webhook Z-API:", error);
-    // Sempre retornar 200 OK mesmo com erros
+    console.error("Erro inesperado no webhook Z-API:", error);
+    // Sempre retornar 200 OK mesmo com erros para não quebrar o webhook
     return NextResponse.json({ success: true }, { status: 200 });
   }
 }
-
