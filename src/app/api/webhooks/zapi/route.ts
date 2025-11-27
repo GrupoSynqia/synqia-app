@@ -1,0 +1,299 @@
+import { NextRequest, NextResponse } from "next/server";
+import db from "@/db";
+import {
+  whatsappBots,
+  whatsappContacts,
+  whatsappMessages,
+  whatsappTriggers,
+  whatsappResponses,
+  whatsappMenus,
+  whatsappMenuOptions,
+} from "@/db/schema";
+import { eq, and, asc } from "drizzle-orm";
+import axios from "axios";
+
+// Tipo do payload do webhook Z-API
+type ZApiWebhookMessage = {
+  isStatusReply: boolean;
+  chatLid: string;
+  connectedPhone: string;
+  waitingMessage: boolean;
+  isEdit: boolean;
+  isGroup: boolean;
+  isNewsletter: boolean;
+  instanceId: string;
+  messageId: string;
+  phone: string;
+  fromMe: boolean;
+  momment: number;
+  status: string;
+  chatName: string;
+  senderPhoto: string | null;
+  senderName: string;
+  photo: string | null;
+  broadcast: boolean;
+  participantLid: string | null;
+  forwarded: boolean;
+  type: string;
+  fromApi: boolean;
+  text?: {
+    message: string;
+  };
+  _traceContext?: {
+    traceId: string;
+    spanId: string;
+  };
+};
+
+// Função para verificar match de trigger
+function checkTriggerMatch(messageText: string, triggerText: string, matchType: string): boolean {
+  const lowerMessage = messageText.toLowerCase();
+  const lowerTrigger = triggerText.toLowerCase();
+
+  switch (matchType) {
+    case "exact":
+      return lowerMessage === lowerTrigger;
+    case "contains":
+      return lowerMessage.includes(lowerTrigger);
+    case "starts_with":
+      return lowerMessage.startsWith(lowerTrigger);
+    case "regex":
+      try {
+        const regex = new RegExp(triggerText, "i");
+        return regex.test(messageText);
+      } catch {
+        return false;
+      }
+    default:
+      return false;
+  }
+}
+
+// Função para formatar mensagem de menu
+async function formatMenuMessage(menuId: string): Promise<string> {
+  const menuData = await db
+    .select()
+    .from(whatsappMenus)
+    .where(eq(whatsappMenus.id, menuId))
+    .limit(1);
+
+  if (menuData.length === 0) {
+    return "";
+  }
+
+  const menu = menuData[0];
+
+  const options = await db
+    .select()
+    .from(whatsappMenuOptions)
+    .where(eq(whatsappMenuOptions.menu_id, menuId))
+    .orderBy(asc(whatsappMenuOptions.order));
+
+  let message = `*${menu.title}*\n\n`;
+
+  if (menu.description) {
+    message += `${menu.description}\n\n`;
+  }
+
+  options.forEach((option, index) => {
+    message += `${index + 1}. ${option.option_text}\n`;
+  });
+
+  return message.trim();
+}
+
+// Função para processar uma mensagem individual
+async function processMessage(message: ZApiWebhookMessage) {
+  try {
+    // Validar se é mensagem recebida
+    if (message.fromMe || message.isGroup || message.type !== "ReceivedCallback") {
+      return;
+    }
+
+    // Validar se tem texto
+    if (!message.text?.message) {
+      return;
+    }
+
+    const messageText = message.text.message;
+
+    // Buscar bot pelo instanceId
+    const botData = await db
+      .select()
+      .from(whatsappBots)
+      .where(eq(whatsappBots.instance_id, message.instanceId))
+      .limit(1);
+
+    if (botData.length === 0) {
+      console.log(`Bot não encontrado para instanceId: ${message.instanceId}`);
+      return;
+    }
+
+    const bot = botData[0];
+
+    // Verificar se bot está ativo
+    if (bot.status !== "active") {
+      console.log(`Bot ${bot.id} está inativo`);
+      return;
+    }
+
+    // Buscar ou criar contato
+    let contact = await db
+      .select()
+      .from(whatsappContacts)
+      .where(and(eq(whatsappContacts.bot_id, bot.id), eq(whatsappContacts.phone, message.phone)))
+      .limit(1);
+
+    let contactId: string;
+
+    if (contact.length === 0) {
+      const [newContact] = await db
+        .insert(whatsappContacts)
+        .values({
+          bot_id: bot.id,
+          phone: message.phone,
+          name: message.senderName || message.chatName,
+          last_interaction_at: new Date(message.momment),
+        })
+        .returning();
+      contactId = newContact.id;
+    } else {
+      contactId = contact[0].id;
+      // Atualizar contato
+      await db
+        .update(whatsappContacts)
+        .set({
+          name: message.senderName || message.chatName || contact[0].name,
+          last_interaction_at: new Date(message.momment),
+          updated_at: new Date(),
+        })
+        .where(eq(whatsappContacts.id, contactId));
+    }
+
+    // Salvar mensagem recebida
+    await db.insert(whatsappMessages).values({
+      bot_id: bot.id,
+      contact_id: contactId,
+      phone: message.phone,
+      message_id: message.messageId,
+      direction: "incoming",
+      message_text: messageText,
+      message_type: "text",
+    });
+
+    // Buscar triggers ativos ordenados por prioridade
+    const triggers = await db
+      .select()
+      .from(whatsappTriggers)
+      .where(and(eq(whatsappTriggers.bot_id, bot.id), eq(whatsappTriggers.is_active, true)))
+      .orderBy(asc(whatsappTriggers.priority), asc(whatsappTriggers.created_at));
+
+    // Verificar match com triggers
+    let matchedTrigger = null;
+    for (const trigger of triggers) {
+      if (checkTriggerMatch(messageText, trigger.trigger_text, trigger.match_type)) {
+        matchedTrigger = trigger;
+        break;
+      }
+    }
+
+    if (!matchedTrigger) {
+      console.log(`Nenhum trigger encontrado para mensagem: ${messageText}`);
+      return;
+    }
+
+    // Buscar resposta associada
+    const responseData = await db
+      .select()
+      .from(whatsappResponses)
+      .where(eq(whatsappResponses.id, matchedTrigger.response_id))
+      .limit(1);
+
+    if (responseData.length === 0) {
+      console.log(`Resposta não encontrada para trigger: ${matchedTrigger.id}`);
+      return;
+    }
+
+    const response = responseData[0];
+
+    // Formatar mensagem de resposta
+    let replyMessage = "";
+
+    if (response.response_type === "menu" && response.menu_id) {
+      replyMessage = await formatMenuMessage(response.menu_id);
+    } else if (response.response_type === "text" && response.response_text) {
+      replyMessage = response.response_text;
+    } else {
+      console.log(`Tipo de resposta não suportado ou sem conteúdo: ${response.response_type}`);
+      return;
+    }
+
+    if (!replyMessage) {
+      console.log(`Mensagem de resposta vazia para resposta: ${response.id}`);
+      return;
+    }
+
+    // Enviar resposta via Z-API
+    const baseURL = process.env.ZAPI_BASE_URL || "https://api.z-api.io";
+    const apiUrl = `${baseURL}/instances/${bot.instance_id}/token/${bot.api_token}/send-text`;
+
+    try {
+      const zapiResponse = await axios.post(
+        apiUrl,
+        {
+          phone: message.phone,
+          message: replyMessage,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const messageId = zapiResponse.data?.messageId || zapiResponse.data?.id;
+
+      // Salvar mensagem enviada
+      await db.insert(whatsappMessages).values({
+        bot_id: bot.id,
+        contact_id: contactId,
+        phone: message.phone,
+        message_id: messageId || null,
+        direction: "outgoing",
+        message_text: replyMessage,
+        message_type: response.response_type,
+      });
+
+      console.log(`Resposta enviada com sucesso para ${message.phone}`);
+    } catch (error) {
+      console.error(`Erro ao enviar resposta via Z-API:`, error);
+      // Não lançar erro para não quebrar o webhook
+    }
+  } catch (error) {
+    console.error(`Erro ao processar mensagem:`, error);
+    // Não lançar erro para não quebrar o webhook
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+
+    // Validar que é um array
+    if (!Array.isArray(body)) {
+      return NextResponse.json({ error: "Payload deve ser um array" }, { status: 400 });
+    }
+
+    // Processar cada mensagem
+    const promises = body.map((message: ZApiWebhookMessage) => processMessage(message));
+    await Promise.all(promises);
+
+    // Sempre retornar 200 OK para o Z-API
+    return NextResponse.json({ success: true }, { status: 200 });
+  } catch (error) {
+    console.error("Erro no webhook Z-API:", error);
+    // Sempre retornar 200 OK mesmo com erros
+    return NextResponse.json({ success: true }, { status: 200 });
+  }
+}
+
