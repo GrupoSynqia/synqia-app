@@ -55,13 +55,13 @@ function checkTriggerMatch(
   const lowerTrigger = triggerText.toLowerCase();
 
   switch (matchType) {
-    case "exact":
+    case "exact": // Exato
       return lowerMessage === lowerTrigger;
-    case "contains":
+    case "contains": // Contém
       return lowerMessage.includes(lowerTrigger);
-    case "starts_with":
+    case "starts_with": // Inicia com
       return lowerMessage.startsWith(lowerTrigger);
-    case "regex":
+    case "regex": // Regex é um padrão de expressão regular que é usado para verificar se uma string corresponde a um padrão específico.
       try {
         const regex = new RegExp(triggerText, "i");
         return regex.test(messageText);
