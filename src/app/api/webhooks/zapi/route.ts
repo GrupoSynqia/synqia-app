@@ -340,12 +340,17 @@ export async function POST(request: NextRequest) {
     // Validar que é um array e converter se necessário
     let messages: ZApiWebhookMessage[];
     if (!Array.isArray(body)) {
-      console.error("Payload não é um array. Tipo recebido:", typeof body);
       // Se for um objeto único, converter para array (caso o Z-API mude o formato)
       if (typeof body === "object" && body !== null) {
-        console.log("Convertendo objeto único para array");
+        console.log(
+          "Payload recebido como objeto único, convertendo para array"
+        );
         messages = [body as ZApiWebhookMessage];
       } else {
+        console.error(
+          "Payload não é um array nem objeto. Tipo recebido:",
+          typeof body
+        );
         return NextResponse.json(
           { error: "Payload deve ser um array ou objeto" },
           { status: 400 }
